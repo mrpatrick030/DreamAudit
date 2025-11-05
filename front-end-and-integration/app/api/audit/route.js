@@ -5,13 +5,13 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const provider = new ethers.JsonRpcProvider(process.env.SOMNIA_RPC_URL);
-const systemWallet = new ethers.Wallet(process.env.SYSTEM_PRIVATE_KEY, provider);
+const systemWallet = new ethers.Wallet(process.env.SOMNIA_PRIVATE_KEY, provider);
 
-// Explorer (e.g., Etherscan-like) setup
-const EXPLORER_API_URL = process.env.EXPLORER_API_URL;
+// Somnia Explorer config
+const EXPLORER_API_URL = "https://shannon-explorer.somnia.network/api";
 const EXPLORER_API_KEY = process.env.EXPLORER_API_KEY;
 
-// FILEBASE
+// Filebase S3 setup
 const s3 = new AWS.S3({
   accessKeyId: process.env.FILEBASE_ACCESS_KEY_ID,
   secretAccessKey: process.env.FILEBASE_SECRET_ACCESS_KEY,
@@ -22,22 +22,30 @@ const s3 = new AWS.S3({
 
 export async function POST(req) {
   try {
-    const { code: providedCode, contractAddress: targetContract, userAddress } = await req.json();
+    const { code: providedCode, contractAddress, userAddress } = await req.json();
 
-    if (!providedCode && !targetContract) {
+    // Validate inputs
+    if (!providedCode && !contractAddress) {
       return NextResponse.json(
         { error: "Please provide either a contract address or contract source code." },
         { status: 400 }
       );
     }
 
-    let actualCode = providedCode;
+    let actualCode = providedCode || "";
 
-    // Try to fetch source from explorer if only contractAddress is given
-    if (!actualCode && targetContract) {
+    // If no code provided, fetch from Somnia Explorer
+    if (!actualCode && contractAddress) {
+      if (!ethers.isAddress(contractAddress)) {
+        return NextResponse.json(
+          { error: "Invalid contract address." },
+          { status: 400 }
+        );
+      }
+
       try {
         const resp = await fetch(
-          `${EXPLORER_API_URL}?module=contract&action=getsourcecode&address=${targetContract}&apikey=${EXPLORER_API_KEY}`
+          `${EXPLORER_API_URL}?module=contract&action=getsourcecode&address=${contractAddress}&apikey=${EXPLORER_API_KEY}`
         );
         const json = await resp.json();
 
@@ -46,8 +54,7 @@ export async function POST(req) {
         } else {
           return NextResponse.json(
             {
-              error:
-                "Verified source code not found for this address. Please upload the contract code manually.",
+              error: "Verified source code not found for this address. Please provide the contract code manually.",
               codeRequired: true,
             },
             { status: 404 }
@@ -57,8 +64,7 @@ export async function POST(req) {
         console.error("Explorer fetch error:", err);
         return NextResponse.json(
           {
-            error:
-              "Could not fetch contract source from explorer. Please upload your Solidity code manually.",
+            error: "Could not fetch contract source from explorer. Please upload your Solidity code manually.",
             codeRequired: true,
           },
           { status: 500 }
@@ -66,9 +72,9 @@ export async function POST(req) {
       }
     }
 
-    // Run OpenAI Audit
+    // Run OpenAI audit
     const aiResponse = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
+      model: "gpt-4.1-mini", // use GPT-4.1 as you wanted
       messages: [
         { role: "system", content: "You are an expert Solidity security auditor." },
         {
@@ -103,7 +109,7 @@ export async function POST(req) {
       request.send();
     });
 
-    // Return to frontend
+    // Return data to frontend only, user decides to save on-chain
     return NextResponse.json({
       message: "Audit completed successfully.",
       summary,
