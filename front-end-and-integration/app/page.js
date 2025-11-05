@@ -75,9 +75,9 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="py-6 text-center text-gray-500 text-sm">
-        Built for Somnia Hackathon 2025 ·{" "}
+        Built for Hackathon 2025 ·{" "}
         <a
-          href="https://github.com/your-repo"
+          href=""
           target="_blank"
           className="hover:text-green-400"
         >
