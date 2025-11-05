@@ -27,7 +27,7 @@ export default function AuditPage({ pushToast }) {
     const fetchMetadata = async () => {
       try {
         const res = await fetch(fullReportURI);
-        const data = await res.text(); // assuming plain text file
+        const data = await res.text(); // plain text file
         setMetadata(data);
       } catch (err) {
         console.error("Failed to fetch audit metadata:", err);
