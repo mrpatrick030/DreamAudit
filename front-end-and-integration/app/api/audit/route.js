@@ -11,7 +11,7 @@ const systemWallet = new ethers.Wallet(process.env.SYSTEM_PRIVATE_KEY, provider)
 const EXPLORER_API_URL = process.env.EXPLORER_API_URL;
 const EXPLORER_API_KEY = process.env.EXPLORER_API_KEY;
 
-// === FILEBASE ===
+// FILEBASE
 const s3 = new AWS.S3({
   accessKeyId: process.env.FILEBASE_ACCESS_KEY_ID,
   secretAccessKey: process.env.FILEBASE_SECRET_ACCESS_KEY,
@@ -33,7 +33,7 @@ export async function POST(req) {
 
     let actualCode = providedCode;
 
-    // === Try to fetch source from explorer if only contractAddress is given ===
+    // Try to fetch source from explorer if only contractAddress is given
     if (!actualCode && targetContract) {
       try {
         const resp = await fetch(
@@ -66,9 +66,9 @@ export async function POST(req) {
       }
     }
 
-    // === Run OpenAI Audit ===
+    // Run OpenAI Audit
     const aiResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       messages: [
         { role: "system", content: "You are an expert Solidity security auditor." },
         {
@@ -81,7 +81,7 @@ export async function POST(req) {
     const fullReport = aiResponse.choices[0].message.content;
     const summary = fullReport.slice(0, 256) + (fullReport.length > 256 ? "..." : "");
 
-    // === Upload full report to Filebase ===
+    // Upload full report to Filebase
     const fileName = `Audit-${Date.now()}.txt`;
     const params = {
       Bucket: "websitefiles",
@@ -103,7 +103,7 @@ export async function POST(req) {
       request.send();
     });
 
-    // === Return to frontend ===
+    // Return to frontend
     return NextResponse.json({
       message: "Audit completed successfully.",
       summary,

@@ -1,142 +1,166 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAppKitProvider, useAppKitAccount } from "@reown/appkit/react";
+import { useState } from "react";
+import { useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
 import { BrowserProvider, Contract, ethers } from "ethers";
-import { DreamAuditABI, DREAM_AUDIT_ADDRESS } from "@/lib/dreamAudit";
+import { FileText, ArrowUpRight } from "lucide-react";
+import { DREAMAUDIT_ABI, DREAMAUDIT_ADDRESS } from "@/lib/contract";
 
-export default function AuditInterface({ pushToast }) {
-  const { address, isConnected } = useAppKitAccount();
-  const { walletProvider } = useAppKitProvider("eip155");
+export default function AuditPage({ pushToast }) {
+  const { address, isConnected, disconnect } = useAppKitAccount();
+  const { connect, walletProvider } = useAppKitProvider("eip155");
 
-  const [contract, setContract] = useState(null);
   const [code, setCode] = useState("");
   const [contractAddress, setContractAddress] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [auditResult, setAuditResult] = useState(null);
-  const [auditURI, setAuditURI] = useState("");
-  const [fee, setFee] = useState(null);
+  const [summary, setSummary] = useState("");
+  const [fullReportURI, setFullReportURI] = useState("");
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [savingOnChain, setSavingOnChain] = useState(false);
 
-  // === Init Contract + Fetch Fee ===
-  useEffect(() => {
-    if (!walletProvider) return;
-    (async () => {
-      try {
-        const provider = new BrowserProvider(walletProvider);
-        const signer = await provider.getSigner();
-        const c = new Contract(DREAM_AUDIT_ADDRESS, DreamAuditABI, signer);
-        setContract(c);
-
-        const f = await c.fee();
-        setFee(f);
-        console.log("Audit fee:", ethers.formatEther(f), "ETH");
-      } catch (err) {
-        console.log("Contract init or fee read error:", err);
-      }
-    })();
-  }, [walletProvider]);
-
-  // === Step 1: Run AI Audit ===
   const handleAudit = async () => {
-    setLoading(true);
-    setAuditResult(null);
+    if (!code && !contractAddress) {
+      pushToast("Please provide code or a contract address");
+      return;
+    }
+    setLoadingAudit(true);
     try {
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: code || null,
-          contractAddress: contractAddress || null,
-          userAddress: address || null,
-        }),
+        body: JSON.stringify({ code, contractAddress, userAddress: address }),
       });
-
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      setAuditResult(data.summary);
-      setAuditURI(data.ipfs);
-      pushToast("Audit completed successfully!", "success");
+      setSummary(data.summary || data.ipfs?.slice(0, 256) || "No summary returned");
+      setFullReportURI(data.ipfs || "");
     } catch (err) {
       console.error("Audit error:", err);
-      pushToast(err.message || "Audit failed", "error");
-    } finally {
-      setLoading(false);
+      pushToast("Audit failed: " + (err.message || "Unknown error"));
+    }
+    setLoadingAudit(false);
+  };
+
+  const handleWalletConnect = async () => {
+    try {
+      await connect();
+      pushToast("Wallet connected ✅");
+    } catch (err) {
+      console.error("Connect wallet error:", err);
+      pushToast("Failed to connect wallet");
     }
   };
 
-  // === Step 2: Save Audit Onchain ===
-  const saveOnchain = async () => {
-    if (!contract || !isConnected)
-      return pushToast("Connect your wallet first", "error");
+  const handleSaveOnChain = async () => {
+    if (!fullReportURI) {
+      pushToast("No report to save on-chain");
+      return;
+    }
+    if (!isConnected || !walletProvider) {
+      pushToast("Connect your wallet to save audit on-chain");
+      return;
+    }
 
+    setSavingOnChain(true);
     try {
+      const provider = new BrowserProvider(walletProvider);
+      const signer = await provider.getSigner();
+      const contract = new Contract(DREAMAUDIT_ADDRESS, DREAMAUDIT_ABI, signer);
+
       const tx = await contract.storeAudit(
-        ethers.id(contractAddress || code),
-        auditURI,
-        { value: fee }
+        ethers.utils.id(contractAddress || code),
+        fullReportURI
       );
       await tx.wait();
-      pushToast("Audit saved onchain successfully!", "success");
+      pushToast("Audit metadata saved on-chain ✅");
+
+      // Reset for next audit
+      setCode("");
+      setContractAddress("");
+      setSummary("");
+      setFullReportURI("");
     } catch (err) {
-      console.error("Save onchain error:", err);
-      pushToast("Transaction failed", "error");
+      console.error("Save on-chain error:", err);
+      pushToast("Failed to save on-chain: " + (err.message || "Unknown error"));
     }
+    setSavingOnChain(false);
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <h2 className="text-lg font-semibold">DreamAudit — Smart Contract Auditor</h2>
+    <div className="min-h-screen bg-gray-900 text-white px-6 py-12">
+      <h1 className="text-4xl font-bold text-center mb-8">AI Contract Auditor</h1>
 
-      <textarea
-        className="w-full p-2 border rounded bg-gray-50 dark:bg-gray-800"
-        rows={6}
-        placeholder="Paste your smart contract code here (optional)"
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-      />
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Inputs */}
+        <textarea
+          placeholder="Paste Solidity code here..."
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          className="w-full p-4 rounded-xl bg-gray-800 text-white h-40 resize-none"
+        />
+        <input
+          type="text"
+          placeholder="Or input contract address"
+          value={contractAddress}
+          onChange={(e) => setContractAddress(e.target.value)}
+          className="w-full p-4 rounded-xl bg-gray-800 text-white"
+        />
 
-      <input
-        className="w-full p-2 border rounded bg-gray-50 dark:bg-gray-800"
-        placeholder="Or enter contract address"
-        value={contractAddress}
-        onChange={(e) => setContractAddress(e.target.value)}
-      />
+        <button
+          onClick={handleAudit}
+          disabled={loadingAudit}
+          className="w-full py-3 bg-purple-600 hover:bg-purple-700 rounded-xl font-semibold transition"
+        >
+          {loadingAudit ? "Auditing..." : "Run AI Audit"}
+        </button>
 
-      <button
-        onClick={handleAudit}
-        disabled={loading}
-        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-      >
-        {loading ? "Auditing..." : "Run AI Audit"}
-      </button>
+        {/* Summary Display */}
+        {summary && (
+          <div className="p-4 bg-gray-800 rounded-2xl shadow-md space-y-2">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <FileText /> Audit Summary
+            </h2>
+            <p>{summary}</p>
+            {fullReportURI && (
+              <a
+                href={fullReportURI}
+                target="_blank"
+                className="flex items-center gap-1 text-purple-400 hover:underline"
+              >
+                <ArrowUpRight /> View Full Report
+              </a>
+            )}
 
-      {auditResult && (
-        <div className="mt-4 p-3 border rounded bg-gray-50 dark:bg-gray-800">
-          <h3 className="font-semibold">AI Summary:</h3>
-          <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 whitespace-pre-line">
-            {auditResult}
-          </p>
+            {/* Custom Connect / Save Button */}
+            {!isConnected ? (
+              <button
+                onClick={handleWalletConnect}
+                className="mt-2 py-2 px-4 bg-purple-600 hover:bg-purple-700 rounded-xl font-semibold shadow-lg animate-pulse transition"
+              >
+                Connect Wallet
+              </button>
+            ) : (
+              <button
+                onClick={handleSaveOnChain}
+                disabled={savingOnChain}
+                className="mt-2 py-2 px-4 bg-purple-600 hover:bg-purple-700 rounded-xl font-semibold shadow-lg transition"
+              >
+                {savingOnChain ? "Saving..." : "Save Metadata On-Chain"}
+              </button>
+            )}
 
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-4">
-            <a
-              href={auditURI}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-500 underline"
-            >
-              View Full Report
-            </a>
-
-            <button
-              onClick={saveOnchain}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Save Onchain ({fee ? `${ethers.formatEther(fee)} ETH` : "Loading fee..."})
-            </button>
+            {/* Optional disconnect */}
+            {isConnected && (
+              <button
+                onClick={disconnect}
+                className="mt-2 py-1 px-3 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm transition"
+              >
+                Disconnect Wallet
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

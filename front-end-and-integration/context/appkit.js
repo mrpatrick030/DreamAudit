@@ -2,7 +2,7 @@
 
 import { createAppKit } from "@reown/appkit/react";
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
-import { mainnet, somnia } from "@reown/appkit/networks";
+import { mainnet, somniaTestnet } from "@reown/appkit/networks";
 
 // 1. Get projectId at https://dashboard.reown.com
 const projectId = "412e456b43a4f3d99609ac9f620ecfd3";
@@ -19,7 +19,7 @@ const metadata = {
 createAppKit({
   adapters: [new EthersAdapter()],
   metadata,
-  networks: [mainnet, somnia],
+  networks: [mainnet, somniaTestnet],
   projectId,
   features: {
     analytics: true,
